@@ -1,0 +1,21 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AllowAWSDataSync",
+            "Effect": "Allow",
+            "Principal": {
+                "Service": "datasync.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole",
+            "Condition": {
+                "StringEquals": {
+                    "aws:SourceAccount": "{SRC_ACCOUNT}"
+                },
+                "ArnLike": {
+                    "aws:SourceArn": "arn:aws:datasync:{SRC_REGION}:{SRC_ACCOUNT}:*"
+                }
+            }
+        }
+    ]
+}

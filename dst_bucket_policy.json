@@ -1,0 +1,28 @@
+{
+    "Version": "2008-10-17",
+    "Statement": [
+        {
+            "Sid": "{ID}-{DST_BUCKET}",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::{SRC_ACCOUNT}:role/{ID}-dst"
+            },
+            "Action": [
+                "s3:GetBucketLocation",
+                "s3:ListBucket",
+                "s3:ListBucketMultipartUploads",
+                "s3:AbortMultipartUpload",
+                "s3:DeleteObject",
+                "s3:GetObject",
+                "s3:ListMultipartUploadParts",
+                "s3:PutObject",
+                "s3:GetObjectTagging",
+                "s3:PutObjectTagging"
+            ],
+            "Resource": [
+                "arn:aws:s3:::{DST_BUCKET}",
+                "arn:aws:s3:::{DST_BUCKET}/*"
+            ]
+        }
+    ]
+}
