@@ -14,22 +14,35 @@ def read_json(path: str, constants: dict) -> str:
         text = text.replace(f'{{{key}}}', value)
     return json.loads(text)
 
+def write_json(obj: dict, path: str):
+    if not path.endswith('.json'):
+        path = f'{path}.json'
+    with open(path, 'w') as f:
+        json.dump(obj, f, default = str)
+
 # [https://docs.aws.amazon.com/datasync/latest/userguide/tutorial_s3-s3-cross-account-transfer.html
-def cp(id: str, src_profile: str, dst_profile: str,
-          src_bucket: str, dst_bucket: str,
-          src_path: str = '', dst_path: str = '',
-          src_region: str = None, dst_region: str = None
-       ):
+def cp(id: str):
     
+    config = read_json(id, {})
+    src_config = config['source']
+    src_profile = src_config['profile']
+    src_bucket = src_config['bucket']
+    src_path = src_config.get('path', '')
+    dst_config = config['destination']
+    dst_profile = dst_config['profile']
+    dst_bucket = dst_config['bucket']
+    dst_path = dst_config.get('path', '')
+    cache = config['cache'] = {}
+
     # Init
     print('Initializing')
     src_sesh = boto3.Session(profile_name = src_profile)
     dst_sesh = boto3.Session(profile_name = dst_profile)
     src_account = src_sesh.client('sts').get_caller_identity()['Account']
     print(f'- Src Account: {src_account}')
-    src_region = src_sesh.client('s3').get_bucket_location(Bucket = src_bucket)['LocationConstraint']
+    src_region = src_sesh.client('s3').get_bucket_location(Bucket = src_bucket)['LocationConstraint'] or 'us-east-1'
     print(f'- Src Region: {src_region}')
-    dst_region = dst_sesh.client('s3').get_bucket_location(Bucket = dst_bucket)['LocationConstraint']
+    dst_region = dst_sesh.client('s3').get_bucket_location(Bucket = dst_bucket)['LocationConstraint'] or 'us-east-1'
     print(f'- Dst Region: {dst_region}')
     constants = {
         'DST_BUCKET': dst_bucket,
@@ -93,8 +106,8 @@ def cp(id: str, src_profile: str, dst_profile: str,
     old_bucket_policy = None
     try:
         old_bucket_policy = s3.get_bucket_policy(Bucket = dst_bucket)['Policy']
-        with open('old_bucket_policy.json', 'w') as f:
-            f.write(old_bucket_policy)
+        cache['old_bucket_policy'] = old_bucket_policy
+        write_json(config, f'{id}.json')
         dst_bucket_policy = json.loads(old_bucket_policy)
         if all([statement['Sid'] != sid for statement in dst_bucket_policy['Statement']]):
             dst_bucket_policy['Statement'].append(dst_bucket_policy_new['Statement'][0])
@@ -116,8 +129,8 @@ def cp(id: str, src_profile: str, dst_profile: str,
     # https://docs.aws.amazon.com/datasync/latest/userguide/tutorial_s3-s3-cross-account-transfer.html#s3-s3-cross-account-disable-acls-destination-account
     print('Step #3')
     old_ownership_controls = s3.get_bucket_ownership_controls(Bucket = dst_bucket)['OwnershipControls']
-    with open('old_ownership_controls.json', 'w') as f:
-        json.dump(old_ownership_controls, f)
+    cache['old_ownership_controls'] = old_ownership_controls
+    write_json(config, f'{id}.json')
     s3.put_bucket_ownership_controls(
         Bucket = dst_bucket,
         OwnershipControls = {
@@ -141,7 +154,8 @@ def cp(id: str, src_profile: str, dst_profile: str,
         S3StorageClass = 'STANDARD',
         Subdirectory = src_path,
     )
-    src_loc_arn = src_location['LocationArn']
+    src_loc_arn = cache['src_loc_arn'] = src_location['LocationArn']
+    write_json(config, f'{id}.json')
     print(f'- Src Location: {src_loc_arn}')
     datasync_dst = src_sesh.client('datasync', config = Config(region_name = dst_region))
     dst_location = datasync_dst.create_location_s3(
@@ -152,7 +166,8 @@ def cp(id: str, src_profile: str, dst_profile: str,
         S3StorageClass = 'STANDARD',
         Subdirectory = dst_path,
     )
-    dst_loc_arn = dst_location['LocationArn']
+    dst_loc_arn = cache['dst_loc_arn'] = dst_location['LocationArn']
+    write_json(config, f'{id}.json')
     print(f'- Dst Location: {dst_loc_arn}')
     
     # Step 5: In your source account, create and start your DataSync task
@@ -173,7 +188,8 @@ def cp(id: str, src_profile: str, dst_profile: str,
         },
         TaskMode = 'ENHANCED',
     )
-    task_arn = src_datasync_task['TaskArn']
+    task_arn = cache['task_arn'] = src_datasync_task['TaskArn']
+    write_json(config, f'{id}.json')
     print(f'- Task: {task_arn}')
     src_task_exec = datasync_dst.start_task_execution(TaskArn = task_arn)
     tast_exec_arn = src_task_exec['TaskExecutionArn']
@@ -191,12 +207,51 @@ def cp(id: str, src_profile: str, dst_profile: str,
             print('-', status)
             if status == 'SUCCESS':
                 with open('task_execution.json', 'w') as f:
-                    json.dump(src_task_exec, f)
+                    json.dump(src_task_exec, f, default = str)
                 break
         except Exception as e:
             print('*', e)
     
     # Cleanup
+    cleanup(id)
+    print('Done')
+
+def cleanup(id: str):
+    # Init
+    config = read_json(id, {})
+    src_config = config['source']
+    src_profile = src_config['profile']
+    src_bucket = src_config['bucket']
+    src_path = src_config.get('path', '')
+    dst_config = config['destination']
+    dst_profile = dst_config['profile']
+    dst_bucket = dst_config['bucket']
+    dst_path = dst_config.get('path', '')
+    cache = config['cache']
+    task_arn = cache['task_arn']
+    dst_loc_arn = cache['dst_loc_arn']
+    src_loc_arn = cache['src_loc_arn']
+    old_ownership_controls = cache['old_ownership_controls']
+    old_bucket_policy = cache['old_bucket_policy']
+    dst_role = f'{id}-dst'
+    src_role = f'{id}-src'
+    
+    print('Initializing')
+    src_sesh = boto3.Session(profile_name = src_profile)
+    dst_sesh = boto3.Session(profile_name = dst_profile)
+    src_account = src_sesh.client('sts').get_caller_identity()['Account']
+    print(f'- Src Account: {src_account}')
+    src_region = src_sesh.client('s3').get_bucket_location(Bucket = src_bucket)['LocationConstraint'] or 'us-east-1'
+    print(f'- Src Region: {src_region}')
+    dst_region = dst_sesh.client('s3').get_bucket_location(Bucket = dst_bucket)['LocationConstraint'] or 'us-east-1'
+    print(f'- Dst Region: {dst_region}')
+
+    # Cleanup
+    print('Preparing Clients')
+    datasync_dst = src_sesh.client('datasync', config = Config(region_name = dst_region))
+    datasync_src = src_sesh.client('datasync', config = Config(region_name = src_region))
+    s3 = dst_sesh.client('s3')
+    iam = src_sesh.client('iam')
     print('Cleaning Up')
     datasync_dst.delete_task(TaskArn = task_arn)
     print('- Task deleted')
@@ -204,13 +259,11 @@ def cp(id: str, src_profile: str, dst_profile: str,
     datasync_src.delete_location(LocationArn = src_loc_arn)
     print('- Locations deleted')
     s3.put_bucket_ownership_controls(Bucket = dst_bucket, OwnershipControls = old_ownership_controls)
-    os.remove('old_ownership_controls.json')
     print('- Bucket Ownership Controls Restored')
     if old_bucket_policy is None:
         s3.delete_bucket_policy(Bucket = dst_bucket)
     else:
         s3.put_bucket_policy(Bucket = dst_bucket, Policy = old_bucket_policy)
-        os.remove('old_bucket_policy.json')
     print('- Bucket Policy Restored')
     iam.detach_role_policy(RoleName = dst_role, PolicyArn = 'arn:aws:iam::aws:policy/AWSDataSyncFullAccess')
     iam.detach_role_policy(RoleName = dst_role, PolicyArn = 'arn:aws:iam::aws:policy/AWSDataSyncReadOnlyAccess')
@@ -219,6 +272,9 @@ def cp(id: str, src_profile: str, dst_profile: str,
     iam.delete_role_policy(RoleName = src_role, PolicyName = src_role)
     iam.delete_role(RoleName = src_role)
     print('- Roles deleted')
-    print('Done')
 
-cp('ds3', 'embryonics', 'rhea', 'transfer-data-from-labs', 'rhea-test', src_path = 'chicago', dst_path = 'chicago')
+    # config.pop('cache')
+    # write_json(config, f'{id}.json')
+
+# cp('dsbonna')
+cleanup('dsbonna')
