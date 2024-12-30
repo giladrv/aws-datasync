@@ -197,17 +197,24 @@ def cp(id: str):
 
     # Wait for completion
     print('Waiting')
+    status = None
     while True:
         time.sleep(10)
         try:
             src_task_exec = datasync_dst.describe_task_execution(
                 TaskExecutionArn = tast_exec_arn,
             )
-            status = src_task_exec['Status']
-            print('-', status)
+            new_status = src_task_exec['Status']
+            if new_status == status:
+                print('.', end = '')
+            else:
+                if status is not None:
+                    print()
+                status = new_status
+                print('-', status, end = '')
             if status == 'SUCCESS':
-                with open('task_execution.json', 'w') as f:
-                    json.dump(src_task_exec, f, default = str)
+                print('!')
+                write_json(src_task_exec, 'task_execution.json')
                 break
         except Exception as e:
             print('*', e)
