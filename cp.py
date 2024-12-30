@@ -3,6 +3,7 @@ import boto3
 from botocore.config import Config
 import json
 import os
+import re
 import time
 
 def read_json(path: str, constants: dict) -> str:
@@ -283,5 +284,36 @@ def cleanup(id: str):
     # config.pop('cache')
     # write_json(config, f'{id}.json')
 
-# cp('dsbonna')
-cleanup('dsbonna')
+def restore(id: str):
+    # Init
+    print('Initializing')
+    config = read_json(id, {})['source']
+    profile = config['profile']
+    bucket = config['bucket']
+    prefix = config.get('path', '') + '/'
+    regex = config.get('regex', None)
+    sesh = boto3.Session(profile_name = profile)
+    client = sesh.client('s3')
+    print('Restoring:', prefix)
+    kw_list = {
+        'Bucket': bucket,
+        'Prefix': prefix,
+    }
+    kw_restore = {
+        'Bucket': bucket,
+        'RestoreRequest': { 'Days': 1 }
+    }
+    while True:
+        res = client.list_objects_v2(**kw_list)
+        if res['KeyCount'] > 0:
+            for obj in res['Contents']:
+                key = kw_restore['Key'] = obj['Key']
+                if regex is None or re.fullmatch(   regex, key) is not None:
+                    print('\t-', key[len(prefix):])
+                    client.restore_object(**kw_restore)
+        if res['IsTruncated']:
+            kw_list['ContinuationToken'] = res['NextContinuationToken']
+        else:
+            break
+    print('Done')
+
