@@ -151,7 +151,7 @@ def cp(id: str):
         S3Config = {
             'BucketAccessRoleArn': f'arn:aws:iam::{src_account}:role/{src_role}',
         },
-        S3StorageClass = 'STANDARD',
+        S3StorageClass = src_config.get('storage', 'STANDARD'),
         Subdirectory = src_path,
     )
     src_loc_arn = cache['src_loc_arn'] = src_location['LocationArn']
@@ -163,7 +163,7 @@ def cp(id: str):
         S3Config = {
             'BucketAccessRoleArn': f'arn:aws:iam::{src_account}:role/{dst_role}',
         },
-        S3StorageClass = 'STANDARD',
+        S3StorageClass = dst_config.get('storage', 'STANDARD'),
         Subdirectory = dst_path,
     )
     dst_loc_arn = cache['dst_loc_arn'] = dst_location['LocationArn']
