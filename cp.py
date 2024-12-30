@@ -302,7 +302,10 @@ def restore(id: str):
     }
     kw_restore = {
         'Bucket': bucket,
-        'RestoreRequest': { 'Days': 1 }
+        'RestoreRequest': {
+            'Days': 1,
+            'Tier': 'Bulk',
+        },
     }
     while True:
         res = client.list_objects_v2(**kw_list)
