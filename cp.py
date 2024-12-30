@@ -4,6 +4,7 @@ from botocore.config import Config
 import json
 import os
 import re
+import sys
 import time
 
 def read_json(path: str, constants: dict) -> str:
@@ -317,3 +318,13 @@ def restore(id: str):
             break
     print('Done')
 
+CMD2FUN = {
+    'copy': cp,
+    'clean': cleanup,
+    'restore': restore,
+}
+
+if __name__ == '__main__':
+    cmd, id, *_ = sys.argv[1:]
+    print(cmd, id)
+    CMD2FUN[cmd](id)
