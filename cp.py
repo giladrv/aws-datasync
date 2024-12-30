@@ -239,7 +239,7 @@ def cleanup(id: str):
     dst_loc_arn = cache['dst_loc_arn']
     src_loc_arn = cache['src_loc_arn']
     old_ownership_controls = cache['old_ownership_controls']
-    old_bucket_policy = cache['old_bucket_policy']
+    old_bucket_policy = cache.get('old_bucket_policy')
     dst_role = f'{id}-dst'
     src_role = f'{id}-src'
     
