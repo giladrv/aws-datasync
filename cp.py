@@ -18,7 +18,7 @@ def write_json(obj: dict, path: str):
     if not path.endswith('.json'):
         path = f'{path}.json'
     with open(path, 'w') as f:
-        json.dump(obj, f, default = str)
+        json.dump(obj, f, indent = 4, default = str)
 
 # [https://docs.aws.amazon.com/datasync/latest/userguide/tutorial_s3-s3-cross-account-transfer.html
 def cp(id: str):
